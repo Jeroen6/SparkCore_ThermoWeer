@@ -1,6 +1,6 @@
-#define RENEW_INTERVAL      300000      // 30 secs
-#define RETRY_INTERVAL      10000       // 10 secs
-#define RESPONSE_INTERVAL   1000        // 1 sec
+#define RENEW_INTERVAL      60*1000      // 30 secs
+#define RETRY_INTERVAL      10*1000      // 10 secs
+#define RESPONSE_INTERVAL   1*1000       // 1 sec
 
 TCPClient client;
 byte server[] = { 192, 168, 1, 100 }; // Google
@@ -10,6 +10,7 @@ int led = D0;
 int waitpin_C = D7; 
 int waitpin_NO = D5; 
 int waitpin_NC = D3; 
+int displayReset = A0;
 
 // Globals
 volatile int state = 0;
@@ -23,23 +24,68 @@ volatile int hash = 0;
 volatile char command[32];
 volatile int command_i=0;
 
+
+// Displays float with one decimal
+int display(float fx){
+    int ix, idec, iint;
+    char tempString[10]; //Used for sprintf
+    // Lets see if we can display this number
+    if(fx < -999.0 || fx > 999.0)
+        return -1;  // We cannot
+    
+    // Round
+    if(fx<0)
+        ix = fx*-10;
+    else
+        ix = fx*10;
+    
+    // Reset display
+    Serial1.write(0x81);
+    
+    // Write display
+    if(fx<0){
+        sprintf(tempString, "-%3d", ix); //Convert deciSecond into a string that is right adjusted
+    }else{
+        sprintf(tempString, "%4d", ix); //Convert deciSecond into a string that is right adjusted
+    }
+    delay(10);
+    Serial1.print(tempString);
+    delay(10);
+    // Enable dot
+    Serial1.write(0x77);
+    Serial1.write(0x04);  // Enable dot 2
+    
+    
+    return 0;
+    
+}
+
 void setup()
 {
-  Serial1.begin(9600);
-  
-  Serial1.println("Thermometer sketch");
-
-  pinMode(led, OUTPUT);  
-  // Button resistorless
-  pinMode(waitpin_C, INPUT );  
-  pinMode(waitpin_NO, OUTPUT );  
-  pinMode(waitpin_NC, OUTPUT );
-  digitalWrite(waitpin_NO, LOW);
-  digitalWrite(waitpin_NC, HIGH);
-
-  state = 0;
-  wait = RETRY_INTERVAL;
-  // Connecting
+    Serial1.begin(9600);
+    
+    Serial1.println("Thermometer sketch");
+    
+    pinMode(led, OUTPUT);  
+    // Button resistorless
+    pinMode(waitpin_C, INPUT );  
+    pinMode(waitpin_NO, OUTPUT );  
+    pinMode(waitpin_NC, OUTPUT );
+    digitalWrite(waitpin_NO, LOW);
+    digitalWrite(waitpin_NC, HIGH);
+    
+    // Display reset
+    pinMode(displayReset, OUTPUT);
+    digitalWrite(displayReset, LOW);
+    delay(10);
+    digitalWrite(displayReset, HIGH);
+    
+    state = 0;
+    wait = RETRY_INTERVAL;
+    
+    display(1.2);
+    
+    // Connecting
 }
 
 void loop()
@@ -87,7 +133,7 @@ void loop()
             command_i = 0;
             for(int i=0; i<sizeof(command); i++) command[i] = 0;
             if(client.connected()){
-                client.println("GET / HTTP/1.0\r\n\r\n");
+                client.println("GET // HTTP/1.0\r\n\r\n");
                 wait = RESPONSE_INTERVAL;
                 state = 3;
             }else{
@@ -142,23 +188,36 @@ void loop()
             }
             break;
         case 5:
+        {
+            float temp = 0.0;
+            int code = 0;
             // Parse data read
             client.stop();
             Serial1.println("I've got this:");
             for(int i=0; i<sizeof(command); i++) Serial1.write(command[i]);
+            Serial1.println("");
             
             // Control display
-            int code = (command[1]*1000)+(command[2]*100)+(command[3]*10)+(command[4]*1);
-            int temp = atoi((const char*)&command[6]);
+            //int code = (command[1]*1000)+(command[2]*100)+(command[3]*10)+(command[4]*1);
+            //float temp = atoi((const char*)&command[6]) + (0.1 * atoi((const char*)&command[8]));
+            sscanf((const char*)command,"<%d;%f>",&code,&temp);
             
+            Serial1.print("Code: ");Serial1.println(code);
+            Serial1.print("Temp: ");Serial1.println(temp);
+  
+            display(temp);
+        
+            
+            /*
             char tempString[10]; //Used for sprintf
             Serial1.println();
             Serial1.write('v');
             sprintf(tempString, "%4d", temp); //Convert deciSecond into a string that is right adjusted
             Serial1.print(tempString);
-            
-            wait = 5000;
+            */
+            wait = RENEW_INTERVAL;
             state = 0;
+        }
             break;
             
     }
