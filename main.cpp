@@ -12,13 +12,16 @@ int waitpin_NO = D5;
 int waitpin_NC = D3; 
 
 // Globals
-int state = 0;
-int wait = 0;
-int loopwait = 10;
+volatile int state = 0;
+volatile int wait = 0;
+volatile int loopwait = 10;
 
-int tries = 0;
-int store = 0;
-int hash = 0;
+volatile int tries = 0;
+volatile int store = 0;
+volatile int hash = 0;
+
+volatile char command[32];
+volatile int command_i=0;
 
 void setup()
 {
@@ -41,9 +44,6 @@ void setup()
 
 void loop()
 {
-    char command[32];
-    int command_i=0;
-    int i;
     if(!digitalRead(waitpin_C)){
         // Skip mode, to ensure bootloader stays available
         char buffer[32];
@@ -81,10 +81,11 @@ void loop()
             break;
         case 2:
             // Requesting
-            for(i=0; i<sizeof(command); i++) command[i] = 0;
             tries = 0;
             store = 0;
             hash = 0;
+            command_i = 0;
+            for(int i=0; i<sizeof(command); i++) command[i] = 0;
             if(client.connected()){
                 client.println("GET / HTTP/1.0\r\n\r\n");
                 wait = RESPONSE_INTERVAL;
@@ -105,9 +106,9 @@ void loop()
                     Serial1.print(c);
                     
                     // If last expected char found, quit reading
-                    if(c=='>') hash = 1;
+                    if(c =='>') hash = 1;
                     // If first char of data found, start storing the string
-                    if(c=='<') store = 1;
+                    if(c =='<') store = 1;
                     if(store){
                         command[command_i++] = c;
                     }
@@ -145,9 +146,11 @@ void loop()
             client.stop();
             Serial1.println("I've got this:");
             for(int i=0; i<sizeof(command); i++) Serial1.write(command[i]);
+            
             // Control display
             int code = (command[1]*1000)+(command[2]*100)+(command[3]*10)+(command[4]*1);
-            int temp = atoi(&command[6]);
+            int temp = atoi((const char*)&command[6]);
+            
             char tempString[10]; //Used for sprintf
             Serial1.println();
             Serial1.write('v');
