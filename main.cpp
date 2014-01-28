@@ -1,5 +1,6 @@
-#define RENEW_INTERVAL  30000
-#define RETRY_INTERVAL  5000
+#define RENEW_INTERVAL      300000      // 30 secs
+#define RETRY_INTERVAL      10000       // 10 secs
+#define RESPONSE_INTERVAL   1000        // 1 sec
 
 TCPClient client;
 byte server[] = { 192, 168, 1, 100 }; // Google
@@ -13,6 +14,7 @@ int waitpin_NC = D3;
 // Globals
 int state = 0;
 int wait = 0;
+int loopwait = 10;
 
 int tries = 0;
 int store = 0;
@@ -39,9 +41,11 @@ void setup()
 
 void loop()
 {
-    int i=0;
+    char command[32];
+    int command_i=0;
+    int i;
     if(!digitalRead(waitpin_C)){
-        // Skip mode
+        // Skip mode, to ensure bootloader stays available
         char buffer[32];
         sprintf(buffer,"skip state: %d\r\n",state);
         Serial1.print(buffer);
@@ -49,11 +53,11 @@ void loop()
         delay(100);
         return;
     }else{
-        digitalWrite(led, LOW);   // Turn ON the LED  
+        digitalWrite(led, LOW);   // Turn OFF the LED  
     }
 
-    static char command[16];
-    delay(10);
+
+    delay(1);
     switch(state){
         case 0:
             // Waiting for next time
@@ -68,7 +72,7 @@ void loop()
             Serial1.println("connecting");
             if (client.connect(server, 80)){
                 Serial1.println("connected");
-                state++;
+                state = 2;
             }else{
                 Serial1.println("connection failed state 1");
                 wait = RETRY_INTERVAL;
@@ -83,7 +87,7 @@ void loop()
             hash = 0;
             if(client.connected()){
                 client.println("GET / HTTP/1.0\r\n\r\n");
-                wait = 10;
+                wait = RESPONSE_INTERVAL;
                 state = 3;
             }else{
                 Serial1.println("connection lost state 2");
@@ -96,31 +100,28 @@ void loop()
             if(client.connected()){
                 if (client.available() > 0) 
                 {
+                    // Print response to serial
                     char c = client.read();
+                    Serial1.print(c);
+                    
+                    // If last expected char found, quit reading
                     if(c=='>') hash = 1;
+                    // If first char of data found, start storing the string
                     if(c=='<') store = 1;
                     if(store){
-                        command[i++] = c;
+                        command[command_i++] = c;
                     }
-                    Serial1.print(c);
-                    Serial1.flush();
-                    /*if(tries++ > 1000){
-                        Serial1.println("connection lost");
-                        wait = 5000;
-                        state = 0;
-                        client.stop();
-                        break;
-                    }
-                    delay(1);*/
                 }else{
-                    Serial1.println("no data state 3");  
+                    Serial1.println("nd s3 ");  
                     delay(100);
                 }
+                // Quit reading
                 if(hash){
                     Serial1.println();
                     state = 4;
                 }
             }else{
+                // We lost connection
                 Serial1.println("connection lost state 3");
                 wait = RETRY_INTERVAL;
                 state = 0;
@@ -140,23 +141,21 @@ void loop()
             }
             break;
         case 5:
-            // Parse
-            if(client.connected()){
-                client.stop();
-                Serial1.println("I've got this:");
-                for(int i=0; i<sizeof(command); i++) Serial1.write(command[i]);
-                // Control display
-                int code = (command[1]*1000)+(command[2]*100)+(command[3]*10)+(command[4]*1);
-                int temp = atoi(&command[6]);
-                char tempString[10]; //Used for sprintf
-                Serial1.println();
-                Serial1.write('v');
-                sprintf(tempString, "%4d", temp); //Convert deciSecond into a string that is right adjusted
-                Serial1.print(tempString);
-                
-                wait = 5000;
-                state = 0;
-            }
+            // Parse data read
+            client.stop();
+            Serial1.println("I've got this:");
+            for(int i=0; i<sizeof(command); i++) Serial1.write(command[i]);
+            // Control display
+            int code = (command[1]*1000)+(command[2]*100)+(command[3]*10)+(command[4]*1);
+            int temp = atoi(&command[6]);
+            char tempString[10]; //Used for sprintf
+            Serial1.println();
+            Serial1.write('v');
+            sprintf(tempString, "%4d", temp); //Convert deciSecond into a string that is right adjusted
+            Serial1.print(tempString);
+            
+            wait = 5000;
+            state = 0;
             break;
             
     }
